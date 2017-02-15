@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<title>遗传算法解决01背包问题</title>
+	<style>
+#result{
+	position: absolute;
+	top: 0px;
+	left:20px;
+	height: 500px;
+	overflow-x:hidden;
+	overflow-y:auto;
+	min-width: 200px;
+}
+#main {
+            width:600px;
+            height:350px;
+            border:1px solid black;
+            display:block;
+            margin:20px auto;
+        }
+#container{
+	width: 800px;
+	max-height: 500px;
+    margin:20px auto;
+	overflow-x:hidden;
+	overflow-y:auto;
+}
+h3,p{
+	text-align: center;
+}
+
+
+	</style>
+	<link rel="stylesheet" href="bootstrap.min.css">
+</head>
+<body>
+<h3>遗传算法解决01背包问题</h3>
+<p>0表示不带该物品，1表示带上</p>
+<!-- <canvas id="canvas"></canvas> -->
+<div id="main"></div>
+<div id="result"></div>
+<div id="container">
+	<h4>结果：</h4>
+	<table class="table table-hover" id="table">
+		<thead>
+	        <tr>
+	          <th>#</th>
+	          <th>基因</th>
+	          <th>得分</th>
+	          <!-- <th>Username</th> -->
+	        </tr>
+	    </thead>
+    </table>
+</div>
+<script src="echarts.min.js"></script>
+	<script>
+/*
+待优化问题：
+1；交配，不一定是一半一半的交换的
+2：选择函数（选择哪个个体进行交配）
+
+
+*/
+
+
+var Gene = function(code){
+	this.code = code;
+	this.cost = 0;
+	this.ptw = 0;
+	this.MaxWeight = 0;
+}
+Gene.prototype.code = '';
+// 价值函数
+Gene.prototype.calcCost = function(MaxWeight){
+	this.MaxWeight = MaxWeight;
+	var WeightArr = this.WeightArr;
+	var ValueArr = this.ValueArr;
+	var totalWeight = 0;
+	var totalValue = 0;
+	for( let i = 0 ; i < this.code.length ; i++ ){
+		// 1 表示携带这个东西 0表示不带这个东西
+		if( this.code[i] == 1 ){
+			totalWeight += WeightArr[i];
+			totalValue += ValueArr[i];
+		}
+	}
+	if( totalWeight > this.MaxWeight ){
+		this.cost = 1;
+	}else{
+		this.cost = totalValue;
+	}
+	this.ptw = totalWeight;
+	return this.cost;
+}
+
+// 交配函数
+Gene.prototype.mate = function(gene){
+	var pivot = Math.round( Math.random() * this.Len );
+	var child1 = this.code.substr(0 , pivot ) + gene.code.substr(pivot);
+	var child2 = gene.code.substr(0 , pivot ) + this.code.substr(pivot);
+	return [new Gene(child1) , new Gene(child2)];
+}
+
+// 突变函数
+Gene.prototype.mutate = function(P_MUTATION){
+	if( Math.random() > P_MUTATION ) return ;
+	var newCode = this.code.split('');
+	// 随机突变长度
+	var changeLength = Math.floor( Math.random() * this.code.length );
+	for(var i = 0 ; i < changeLength ; i ++){
+		// 随机突变位置
+		var index = Math.floor( Math.random() * this.code.length );
+		newCode.splice( index , 1 , Math.round( Math.random() ) )
+	}
+	this.code = newCode.join("");
+	
+}
+
+// 生成随机基因
+Gene.prototype.random = function(){
+	var temp = '';
+	for(var i = 0 ; i < this.Len ; i ++ ){
+		temp += Math.round( Math.random() );
+	}
+	this.code = temp;
+}
+var Population = function(pop){
+	this.MaxWeight = pop.bag.maxW; //背包最大承重
+	this.WeightArr = pop.bag.wArr;//物品重量
+	this.ValueArr = pop.bag.vArr; //物品价值
+
+	this.maxValue = 0;  //储存最大价值
+	this.maxGene = [];  //储存最大价值组合
+
+	this.times = 0;  //计算出现最大值的次数
+
+	// 最大值在100（allTimes）代中都相同。
+	this.allTimes = pop.similarGen == undefined ? 100 : pop.similarGen ;
+
+	this.Size = pop.size == undefined ? 20 : pop.size ; //种群规模
+	this.P_XOVER = 0.8;  //遗传概率
+	this.P_MUTATION = pop.P_MUTATION == undefined ? 0.15 : pop.P_MUTATION ; ; // 变异概率
+	this.generationNum = 0;  // 繁衍次数
+
+	var self = this;
+
+	// 这里补充写Gene的类，方便把WeightArr和ValueArr传入
+	Gene.prototype.WeightArr = self.WeightArr
+	Gene.prototype.ValueArr = self.ValueArr
+	Gene.prototype.Len = self.WeightArr.length
+	
+	this.MaxGenerations = pop.maxGen == undefined ? '100' : pop.maxGen ; //总进化代数
+	this.type = pop.type == undefined ? 'near100' : pop.type ; //终止函数的类型（是当100代的最大值相同时终止程序还是繁衍N代之后终止程序）
+
+	this.members = []; // 种群所有对象
+
+	// 生成Gene
+	while( this.Size --){
+		var gene = new Gene();
+		gene.random();
+		this.members.push(gene);
+	}
+
+}
+
+// 按照分值进行排序
+Population.prototype.sort = function(){
+	this.members.sort(function(a,b){
+		return b.cost - a.cost;
+	})
+}
+Population.prototype.generation = function(){
+	var self = this;
+	// 计算分值
+	for( let i = 0 ; i < self.members.length ; i ++ ){
+		var curValue = self.members[i].calcCost(self.MaxWeight)
+		if( curValue > self.maxValue){
+			self.maxValue = curValue;
+			self.maxGene = self.members[i].code;
+			self.times = 0;
+		}
+
+	}
+	// 根据分值排序
+	self.sort();
+
+	// 展示函数，结果即时体现
+	self.display();
+	
+	// 交配个数
+	var mateNum = 3;
+	// 产生后代总数
+	var newChildNum = mateNum*(mateNum-1)
+	// 把种群末尾的淘汰掉，把新后代添加到种群
+	self.members.splice( self.members.length - newChildNum , newChildNum )
+	for(var i = 0 ; i < mateNum ; i ++){
+		for(var j = i+1 ; j < mateNum ; j ++){
+			var chi = self.members[i].mate( self.members[j] );
+			self.members.push( chi[0] )
+			self.members.push( chi[1] )
+		}
+	}	
+
+	// 突变
+	for( var i = 0 ; i < self.members.length ; i ++ ){
+		self.members[i].mutate(  self.P_MUTATION );
+		var curValue = self.members[i].calcCost(self.MaxWeight)
+		if( curValue > self.maxValue){
+			self.times = 0;
+			self.maxValue = curValue;
+			self.maxGene = self.members[i].code;
+		}
+
+		// 判断啥时候终止程序。
+		if (self.type == 'maxGen' && self.generationNum >= self.MaxGenerations) {
+			self.stop();
+			return true;
+		} else if (self.type == 'near100' && self.times == self.allTimes) { //连续100代不变就停止
+			self.stop();
+			return true;
+		}
+
+	}
+
+	self.times++
+	self.generationNum ++ ;
+	
+	setTimeout( function(){
+		self.generation();
+	} , 20);
+}
+
+// 终止程序
+Population.prototype.stop = function(){
+	var self = this;
+	if(maxmax < self.maxValue){
+		maxmax = self.maxValue
+	}
+	// 辅助画图的。
+	option.yAxis.max = 2*maxmax;
+	option.series[0].data.push(self.maxValue);
+	myChart.setOption(option);
+
+	self.sort();
+	self.display();
+	perResult.push({maxV:self.maxValue,gene:self.maxGene })
+	if(perResult.length == loopTimes){
+		self.showTable(perResult)
+ 	}
+}
+// 展现表格结果
+Population.prototype.showTable = function(perResult){
+	var string = '';
+	var table = document.getElementById('table');
+	for(var i = 0 ; i < perResult.length ; i ++ ){
+		if(perResult[i].maxV == maxmax){
+			string += '<tr class="info"><th scope="row">'+ (i+1) +'</th><td>'+ perResult[i].gene +'</td><td>'+ perResult[i].maxV +'</td></tr>';
+		}else{
+			string += '<tr><th scope="row">'+ (i+1) +'</th><td>'+ perResult[i].gene +'</td><td>'+ perResult[i].maxV +'</td></tr>';
+		}
+	}
+	table.innerHTML += string
+}
+
+// 展现动态的繁衍结果
+Population.prototype.display = function(){
+	var result = document.getElementById('result');
+	result.innerHTML = '';
+    result.innerHTML += ("<h2>Generation: " + this.generationNum + "</h2>");
+    result.innerHTML += ("<ul>");
+    for (var i = 0; i < this.members.length; i++) {
+        result.innerHTML += ("<li>" + this.members[i].code + " (" + this.members[i].cost + ")");
+    }
+    result.innerHTML += ("</ul>");
+}
+
+// 入口配置
+function fun (pop) {
+	window.myChart = echarts.init(document.getElementById('main'));
+	// 指定图表的配置项和数据
+	window.loopTimes = pop.loopTimes == undefined ? 10 : pop.loopTimes;
+	window.maxmax = 0;
+	window.perResult = [];
+	window.option = {
+		title: {
+			text: '循环'+ loopTimes +'次得分情况'
+		},
+		tooltip: {},
+		legend: {
+			data: ['value']
+		},
+		xAxis: {
+			data: []
+		},
+		yAxis: {
+			type: 'value',
+			max: 60
+
+		},
+		series: [{
+			name: 'value',
+			type: 'line',
+			data: [],
+		}],
+		label: {
+			normal: {
+				show: true
+			}
+		}
+
+	};
+	for (var i = 0; i < loopTimes; i++) {
+		option.xAxis.data.push(i+1);
+		var population = new Population(pop);
+		population.generation()
+	}
+}
+
+window.onload = function(){
+	// 配置项
+	var pop = {
+		// type:'maxGen',  //终止函数类型 ， 默认near100
+		// maxGen:5,       //繁衍后代数（在type为'maxGen'时有用），默认100
+		// bag:{
+		// 	maxW:150,     //背包限重
+		// 	wArr : [35,30,60,50,40,10,25],  // 物品重量
+		// 	vArr : [10,40,30,50,35,40,30]   // 物品价值
+		// },
+		bag:{
+			maxW:30,
+			wArr : [3,5,7,10,15,20,25,6,8,2],
+			vArr : [10,6,5,8,4,6,12,3,2,1]
+		},
+		loopTimes:10,   //循环次数（可以理解为实验次数）， 默认10
+		// P_MUTATION:0.15,   //变异概率 ， 默认0.15
+		similarGen:20,   //决定多少个后代的最大值相同时停止程序。（在type为near100时有用），默认100
+		// size:30    //种群大小(建议20~100)，默认20
+	}
+	fun(pop);
+}
+
+
+	
+
+
+
+	</script>
+</body>
+</html>
